@@ -210,7 +210,7 @@
                   </td>
                   <td>
                     <button
-                      v-if="!item.purchase_order_id"
+                      v-if="!item.has_purchase_order"
                       @click.stop="openPOModal(item)"
                       class="po-button create"
                     >
@@ -314,7 +314,7 @@ export default {
     PurchaseOrderModal,
   },
   setup() {
-    const { t, currentCurrency, translateProductName, translateWarehouse } = useI18n()
+    const { t, currentCurrency, currentLocale, translateProductName, translateWarehouse } = useI18n()
     const loading = ref(true)
     const error = ref(null)
     const summary = ref({})
@@ -565,7 +565,7 @@ export default {
         loading.value = true
         const filters = getCurrentFilters()
 
-        const [summaryData, ordersData, inventoryData, backlogData] = await Promise.all([
+        const [summaryData, fetchedOrders, inventoryData, backlogData] = await Promise.all([
           api.getDashboardSummary(filters),
           api.getOrders(filters),
           api.getInventory(filters),
@@ -573,7 +573,7 @@ export default {
         ])
 
         summary.value = summaryData
-        allOrders.value = ordersData
+        allOrders.value = fetchedOrders
         inventoryItems.value = inventoryData
         allBacklogItems.value = backlogData
       } catch (err) {
@@ -636,9 +636,9 @@ export default {
 
     const formatDate = (dateString) => {
       if (!dateString) return '-'
-      const { currentLocale } = useI18n()
       const locale = currentLocale.value === 'ja' ? 'ja-JP' : 'en-US'
       const date = new Date(dateString)
+      if (isNaN(date.getTime())) return '-'
       return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
     }
 
@@ -665,11 +665,9 @@ export default {
     }
 
     const handlePOCreated = (poData) => {
-      // Update the backlog item with the new PO ID
       const item = allBacklogItems.value.find(b => b.id === poData.backlog_item_id)
       if (item) {
-        item.purchase_order_id = poData.id
-        item.purchase_order = poData
+        item.has_purchase_order = true
       }
       showPOModal.value = false
     }
