@@ -8,6 +8,37 @@
     <div v-if="loading" class="loading">{{ t('common.loading') }}</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else>
+      <div class="card" v-if="!restockingLoading && restockingOrders.length > 0">
+        <div class="card-header">
+          <h3 class="card-title">Submitted Restocking Orders ({{ restockingOrders.length }})</h3>
+        </div>
+        <div v-if="restockingError" class="error-message">{{ restockingError }}</div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Items</th>
+                <th>Total Cost</th>
+                <th>Submitted</th>
+                <th>Expected Delivery</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="order in restockingOrders" :key="order.id">
+                <td><code>{{ order.id.slice(0, 8) }}...</code></td>
+                <td>{{ getRestockingSummary(order.items) }}</td>
+                <td><strong>{{ formatOrderValue(order.total_cost) }}</strong></td>
+                <td>{{ formatOrderDate(order.submitted_date) }}</td>
+                <td>{{ formatOrderDate(order.expected_delivery) }}</td>
+                <td><span class="badge info">{{ order.status }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="stats-grid">
         <div class="stat-card success">
           <div class="stat-label">{{ t('status.delivered') }}</div>
@@ -96,6 +127,10 @@ export default {
     const error = ref(null)
     const orders = ref([])
 
+    const restockingOrders = ref([])
+    const restockingLoading = ref(true)
+    const restockingError = ref(null)
+
     // Use shared filters
     const {
       selectedPeriod,
@@ -153,7 +188,43 @@ export default {
       })
     }
 
-    onMounted(loadOrders)
+    const loadRestockingOrders = async () => {
+      try {
+        restockingLoading.value = true
+        restockingError.value = null
+        restockingOrders.value = await api.getRestockingOrders()
+      } catch (err) {
+        restockingError.value = 'Failed to load restocking orders'
+      } finally {
+        restockingLoading.value = false
+      }
+    }
+
+    const getRestockingSummary = (items) => {
+      if (items.length === 1) return `${items[0].name} (x${items[0].restock_qty})`
+      return `${items.length} items`
+    }
+
+    const formatOrderValue = (value) => {
+      return `${currencySymbol.value}${value.toLocaleString()}`
+    }
+
+    const formatOrderDate = (dateString) => {
+      const { currentLocale } = useI18n()
+      const locale = currentLocale.value === 'ja' ? 'ja-JP' : 'en-US'
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return dateString
+      return date.toLocaleDateString(locale, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      })
+    }
+
+    onMounted(() => {
+      loadOrders()
+      loadRestockingOrders()
+    })
 
     return {
       t,
@@ -165,7 +236,13 @@ export default {
       formatDate,
       currencySymbol,
       translateProductName,
-      translateCustomerName
+      translateCustomerName,
+      restockingOrders,
+      restockingLoading,
+      restockingError,
+      getRestockingSummary,
+      formatOrderValue,
+      formatOrderDate
     }
   }
 }

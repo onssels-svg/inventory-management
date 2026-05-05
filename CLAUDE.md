@@ -1,74 +1,94 @@
 # CLAUDE.md
 
-Factory Inventory Management System Demo with GitHub integration - Full-stack application with Vue 3 frontend, Python FastAPI backend, and in-memory mock data (no database).
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Factory Inventory Management System — full-stack demo with Vue 3 frontend, Python FastAPI backend, and in-memory mock data (no database).
 
 ## Critical Tool Usage Rules
 
 ### Subagents
-Use the Task tool with these specialized subagents for appropriate tasks:
-
-- **vue-expert**: Use for Vue 3 frontend features, UI components, styling, and client-side functionality
-  - Examples: Creating components, fixing reactivity issues, performance optimization, complex state management
-  - **MANDATORY RULE: ANY time you need to create or significantly modify a .vue file, you MUST delegate to vue-expert**
+- **vue-expert**: **MANDATORY** for creating or significantly modifying any `.vue` file
 - **code-reviewer**: Use after writing significant code to review quality and best practices
-- **Explore**: Use for understanding codebase structure, searching for patterns, or answering questions about how components work
-- **general-purpose**: Use for complex multi-step tasks or when other agents don't fit
+- **Explore**: Use for codebase exploration and pattern searches
+- **general-purpose**: Use for complex multi-step tasks
 
 ### Skills
-- **backend-api-test** skill: Use when writing or modifying tests in `tests/backend` directory with pytest and FastAPI TestClient
+- **backend-api-test**: Use when writing or modifying tests in `tests/backend/`
 
 ### MCP Tools
 - **ALWAYS use GitHub MCP tools** (`mcp__github__*`) for ALL GitHub operations
-  - Exception: Local branches only - use `git checkout -b` instead of `mcp__github__create_branch`
+  - Exception: Local branches — use `git checkout -b` instead of `mcp__github__create_branch`
 - **ALWAYS use Playwright MCP tools** (`mcp__playwright__*`) for browser testing
-  - Test against: `http://localhost:3000` (frontend), `http://localhost:8001` (API)
+  - Frontend: `http://localhost:3000` | API: `http://localhost:8001`
 
 ## Stack
 - **Frontend**: Vue 3 + Composition API + Vite (port 3000)
-- **Backend**: Python FastAPI (port 8001)
-- **Data**: JSON files in `server/data/` loaded via `server/mock_data.py`
+- **Backend**: Python FastAPI + Pydantic v2 + uvicorn (port 8001)
+- **Data**: JSON files in `server/data/` loaded into memory at startup via `server/mock_data.py`
+- **Tests**: pytest + FastAPI TestClient (51 tests, runs in ~0.13s)
 
-## Quick Start
+## Commands
 
+### Backend
 ```bash
-# Backend
 cd server
-uv run python main.py
-
-# Frontend
-cd client
-npm install && npm run dev
+uv run python main.py          # Start server (http://localhost:8001)
 ```
 
-## Key Patterns
+### Frontend
+```bash
+cd client
+npm install                    # Required on first run — node_modules not committed
+npm run dev                    # Start dev server (http://localhost:3000)
+npm run build                  # Production build → client/dist/
+```
 
-**Filter System**: 4 filters (Time Period, Warehouse, Category, Order Status) apply to all data via query params
-**Data Flow**: Vue filters → `client/src/api.js` → FastAPI → In-memory filtering → Pydantic validation → Computed properties
-**Reactivity**: Raw data in refs (`allOrders`, `inventoryItems`), derived data in computed properties
+### Tests
+```bash
+cd tests
+uv run pytest -v                                                      # All 51 tests
+uv run pytest backend/test_inventory.py -v                           # Single file
+uv run pytest backend/test_inventory.py::TestInventoryEndpoints::test_get_all_inventory -v  # Single test
+uv run pytest --cov=../server --cov-report=html                      # With coverage
+```
+
+> **Windows**: The `scripts/start.sh` / `scripts/stop.sh` shell scripts are macOS/Linux only. Use the manual commands above.
+
+## Architecture
+
+### Data Flow
+Vue filter state (`useFilters` composable) → `client/src/api.js` (axios, URLSearchParams) → FastAPI query params → in-memory list comprehension filtering → Pydantic response model → Vue computed properties
+
+### Filter System
+4 global filters — Time Period, Warehouse, Category, Order Status — managed by `client/src/composables/useFilters.js` as module-level refs (singleton, shared across all views). Filters are passed as query params to every API call. **Inventory endpoints do not support `month` filtering** (no time dimension in inventory data).
+
+### Backend Pattern
+All data loads from `server/data/*.json` at startup into module-level lists in `server/mock_data.py`. Endpoints in `server/main.py` filter these lists on every request — no persistence, restarts reset all changes.
+
+### Frontend Composables
+- `useFilters.js` — global filter state (singleton refs)
+- `useAuth.js` — mock auth, always authenticated, hardcoded user with mock tasks
+- `useI18n.js` — EN/JP translations via `client/src/locales/`, persisted to localStorage
+
+### Styling
+Global styles live in `client/src/App.vue` `<style>` (not scoped). Components use scoped styles for local rules. No CSS framework — custom utility classes.
 
 ## API Endpoints
-- `GET /api/inventory` - Filters: warehouse, category
-- `GET /api/orders` - Filters: warehouse, category, status, month
-- `GET /api/dashboard/summary` - All filters
-- `GET /api/demand`, `/api/backlog` - No filters
-- `GET /api/spending/*` - Summary, monthly, categories, transactions
+- `GET /api/inventory` — Filters: `warehouse`, `category`
+- `GET /api/orders` — Filters: `warehouse`, `category`, `status`, `month` (YYYY-MM or Q1-YYYY)
+- `GET /api/dashboard/summary` — All filters
+- `GET /api/demand`, `GET /api/backlog` — No filters
+- `GET /api/spending/summary|monthly|categories|transactions`
 
 ## Common Issues
-1. Use unique keys in v-for (not `index`) - use `sku`, `month`, etc.
-2. Validate dates before `.getMonth()` calls
-3. Update Pydantic models when changing JSON data structure
-4. Inventory filters don't support month (no time dimension)
-5. Revenue goals: $800K/month single, $9.6M YTD all months
-
-## File Locations
-- Views: `client/src/views/*.vue`
-- API Client: `client/src/api.js`
-- Backend: `server/main.py`, `server/mock_data.py`
-- Data: `server/data/*.json`
-- Styles: `client/src/App.vue`
+1. Use unique keys in `v-for` — use `sku`, `month`, etc., never array index
+2. Validate dates before `.getMonth()` calls (`new Date(x)` can return `Invalid Date`)
+3. Update Pydantic models in `server/main.py` when changing JSON data structure
+4. Revenue goals: $800K/month (single month filter), $9.6M YTD (all months)
+5. `PurchaseOrderModal` is referenced in `Dashboard.vue` but not yet implemented — causes a Vue warn on load
 
 ## Design System
-- Colors: Slate/gray (#0f172a, #64748b, #e2e8f0)
-- Status: green/blue/yellow/red
-- Charts: Custom SVG, CSS Grid for layouts
+- Colors: Slate/gray (`#0f172a`, `#64748b`, `#e2e8f0`)
+- Status badges: green (success) / blue (info) / yellow (warning) / red (danger)
+- Charts: Custom SVG + CSS Grid layouts
 - No emojis in UI
